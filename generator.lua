@@ -562,15 +562,14 @@ function StatementRule:SendExpression(node)
 end
 
 function StatementRule:LabelStatement(node)
-   -- self.ctx:here(node.label)
    self.ctx:goto_label(node.label)
+   self:block_enter()
+   self.ctx.scope.label_scope = true
+   print(">>> creating label scope")
 end
 
 function StatementRule:GotoStatement(node)
    self.ctx:goto_jump(node.label)
-   -- TODO: to be fixed to emit UCLO if needed
-   -- probably need to use scope_jump
-   -- return self.ctx:jump(node.label)
 end
 
 function StatementRule:BlockStatement(node, if_exit)
@@ -865,9 +864,21 @@ local function generate(tree, name)
    end
 
    function self:block_leave(exit)
-      self.ctx:fscope_end()
-      self.ctx:close_block(self.ctx.scope.basereg, exit)
-      self.ctx:leave()
+      local label_scope = false
+      print(">>> block_leave enter")
+      repeat
+         print(">>> closing scope", self.ctx.scope.basereg, self.ctx.scope.label_scope)
+         self.ctx:fscope_end()
+         label_scope = self.ctx.scope.label_scope
+         if label_scope then
+            self.ctx:close_block(self.ctx.scope.basereg)
+         else
+            self.ctx:close_block(self.ctx.scope.basereg, exit)
+         end
+         self.ctx:leave()
+      until not label_scope
+      -- self.ctx:close_block(basereg, exit)
+      print(">>> block_leave done")
    end
 
    function self:loop_enter(exit, exit_reg)
