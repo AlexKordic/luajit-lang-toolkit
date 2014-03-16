@@ -562,13 +562,15 @@ function StatementRule:SendExpression(node)
 end
 
 function StatementRule:LabelStatement(node)
-   return self.ctx:here(node.label)
+   -- self.ctx:here(node.label)
+   self.ctx:goto_label(node.label)
 end
 
 function StatementRule:GotoStatement(node)
+   self.ctx:goto_jump(node.label)
    -- TODO: to be fixed to emit UCLO if needed
    -- probably need to use scope_jump
-   return self.ctx:jump(node.label)
+   -- return self.ctx:jump(node.label)
 end
 
 function StatementRule:BlockStatement(node, if_exit)
@@ -758,7 +760,9 @@ function StatementRule:ForStatement(node)
    local loop = self.ctx:op_fori(base)
    self:loop_enter(exit, free)
    self.ctx:newvar(name)
+   self:block_enter()
    self:emit(node.body)
+   self:block_leave()
    self:loop_leave()
    self.ctx:op_forl(base, loop)
    self.ctx:here(exit)
@@ -837,18 +841,18 @@ function StatementRule:Chunk(tree, name)
    self:close_proto()
 end
 
-local function dispatch(self, lookup, node, ...)
-   if type(node) ~= "table" then
-      error("not a table: "..tostring(node))
-   end
-   if not node.kind then
-      error("don't know what to do with: "..util.dump(node))
-   end
-   if not lookup[node.kind] then
-      error("no handler for "..node.kind)
-   end
-   return lookup[node.kind](self, node, ...)
-end
+-- local function dispatch(self, lookup, node, ...)
+--    if type(node) ~= "table" then
+--       error("not a table: "..tostring(node))
+--    end
+--    if not node.kind then
+--       error("don't know what to do with: "..util.dump(node))
+--    end
+--    if not lookup[node.kind] then
+--       error("no handler for "..node.kind)
+--    end
+--    return lookup[node.kind](self, node, ...)
+-- end
 
 local function generate(tree, name)
    local self = { line = 0 }
@@ -861,6 +865,7 @@ local function generate(tree, name)
    end
 
    function self:block_leave(exit)
+      self.ctx:fscope_end()
       self.ctx:close_block(self.ctx.scope.basereg, exit)
       self.ctx:leave()
    end
@@ -890,7 +895,9 @@ local function generate(tree, name)
    end
 
    function self:emit(node, ...)
-      dispatch(self, StatementRule, node, ...)
+      local rule = StatementRule[node.kind]
+      if not rule then error("cannot find a statement rule for " .. node.kind) end
+      rule(self, node, ...)
       if node.line then self.ctx:line(node.line) end
    end
 
