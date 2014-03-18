@@ -562,9 +562,8 @@ function StatementRule:SendExpression(node)
 end
 
 function StatementRule:LabelStatement(node)
-   self.ctx:goto_label(node.label)
-   self:block_enter()
-   self.ctx.scope.label_scope = true
+   local label = self.ctx:goto_label(node.label)
+   self:label_block_enter(label)
 end
 
 function StatementRule:GotoStatement(node)
@@ -859,6 +858,18 @@ local function generate(tree, name)
       self.ctx:fscope_end()
       self.ctx:close_block(proto.scope.basereg, exit)
       self.ctx:leave()
+   end
+
+   function self:label_block_enter(label)
+      local scope = self.ctx.scope
+      if scope.label_scope and scope.basereg == self.ctx.freereg then
+         -- Does not create a new scope but ensure the new label is bound to
+         -- the outer scope.
+         label.scope = scope.outer
+      else
+         self.ctx:enter()
+         self.ctx.scope.label_scope = true
+      end
    end
 
    function self:loop_enter(exit, exit_reg)

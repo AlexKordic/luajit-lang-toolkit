@@ -749,6 +749,7 @@ local function goto_label_append(self, label_name)
    local scope = self.scope
    local label = { name = label_name, scope = scope, basereg = self.freereg, pc = #self.code }
    scope.goto_labels[#scope.goto_labels + 1] = label
+   return label
 end
 local function goto_fixup_append(self, label_name, pc)
    local scope = self.scope
@@ -819,8 +820,9 @@ function Proto.__index:goto_label(label_name)
       -- TODO: ensure the error message is the same of LuaJIT
       error("duplicate label name:", label_name)
    end
-   goto_label_append(self, label_name)
+   local label = goto_label_append(self, label_name)
    goto_label_bind(self, label_name)
+   return label
 end
 function Proto.__index:loop_register(exit, exit_reg)
    self.scope.loop_exit = exit
