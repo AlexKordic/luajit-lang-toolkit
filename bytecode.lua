@@ -439,7 +439,11 @@ function Proto.__index:enter()
    return self.scope
 end
 function Proto.__index:is_root_scope()
-   return (self.scope.outer == nil)
+   local scope = self.scope
+   while scope.label_scope do
+      scope = scope.outer
+   end
+   return (scope.outer == nil)
 end
 function Proto.__index:leave()
    for i=1, #self.scope.actvars do
