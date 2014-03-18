@@ -562,12 +562,20 @@ function StatementRule:SendExpression(node)
 end
 
 function StatementRule:LabelStatement(node)
-   local label = self.ctx:goto_label(node.label)
+   local ok, label = self.ctx:goto_label(node.label)
+   if not ok then
+      local msg = string.format("<goto %s> jumps into the scope of local 'UNKNOWN'", label.name)
+      error(string.format("%s:%d: %s", self.chunkname, label.source_line, msg))
+   end
    self:label_block_enter(label)
 end
 
 function StatementRule:GotoStatement(node)
-   self.ctx:goto_jump(node.label)
+   local ok = self.ctx:goto_jump(node.label, node.line)
+   if not ok then
+      local msg = string.format("undefined label '%s'", node.label)
+      error(string.format("%s:%d: %s", self.chunkname, node.line, msg))
+   end
 end
 
 function StatementRule:BlockStatement(node, if_exit)
@@ -843,6 +851,7 @@ local function generate(tree, name)
    self.main = bc.Proto.new(bc.Proto.VARARG)
    self.dump = bc.Dump.new(self.main, name)
    self.ctx = self.main
+   self.chunkname = tree.chunkname
 
    function self:block_enter()
       self.ctx:enter()
@@ -1038,6 +1047,12 @@ local function generate(tree, name)
       if not self.ctx.explret then
          self.ctx:close_uvals()
          self.ctx:op_ret0()
+      end
+      local fixups = self.ctx.scope.goto_fixups
+      if #fixups > 0 then
+         local label = fixups[1]
+         local msg = string.format("undefined label: '%s'", label.name)
+         error(string.format("%s:%d: %s", self.chunkname, label.source_line, msg))
       end
    end
 

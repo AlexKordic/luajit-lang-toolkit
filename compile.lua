@@ -7,8 +7,9 @@ local reader = require('reader')
 local function compile(reader, filename, options)
     local ls = lex_setup(reader, filename)
     local tree = parse(ast, ls)
+    local util = require("util")
+    print(util.dump(tree))
     local luacode = generator(tree, filename)
-
     return luacode
 end
 

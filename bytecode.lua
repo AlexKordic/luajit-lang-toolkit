@@ -751,9 +751,9 @@ local function goto_label_append(self, label_name)
    scope.goto_labels[#scope.goto_labels + 1] = label
    return label
 end
-local function goto_fixup_append(self, label_name, pc)
+local function goto_fixup_append(self, label_name, source_line, pc)
    local scope = self.scope
-   local fixup = { name = label_name, basereg = self.freereg, need_uclo = false, pc = pc }
+   local fixup = { name = label_name, scope = scope, basereg = self.freereg, pc = pc, need_uclo = false, source_line = source_line }
    scope.goto_fixups[#scope.goto_fixups + 1] = fixup
 end
 local function goto_uclo_backward(self, src_scope, dest_scope)
@@ -763,7 +763,7 @@ local function goto_uclo_backward(self, src_scope, dest_scope)
       need_uclo = need_uclo or scope.need_uclo
       scope = scope.outer
    end
-   return need_uclo
+   return scope, need_uclo
 end
 -- When closing a scope this function is used to transfer all the dangling
 -- gotos (fixups) in the enclosing scope.
@@ -786,43 +786,57 @@ function Proto.__index:fix_goto(pc, basereg, need_uclo, jump)
    local op = need_uclo and BC.UCLO or BC.JMP
    ins:rewrite(op, basereg, jump)
 end
-function Proto.__index:goto_jump(label_name)
+function Proto.__index:goto_jump(label_name, source_line)
    local label = goto_label_resolve(self, label_name)
    if label then -- backward jump
       local dest_scope, basereg = label.scope, label.basereg
-      local need_uclo = goto_uclo_backward(self, self.scope, dest_scope)
+      local found, need_uclo = goto_uclo_backward(self, self.scope, dest_scope)
+      if not found then return false end
       local op = need_uclo and BC.UCLO or BC.JMP
       self:emit(op, basereg, label.pc - #self.code - 1)
    else -- forward jump
       self:emit(BC.JMP, 0, NO_JMP)
-      goto_fixup_append(self, label_name, #self.code)
+      goto_fixup_append(self, label_name, source_line, #self.code)
    end
+   return true
 end
 -- Bind dangling goto instructions ("fixups") to a label.
 -- When a dangling goto is bound to a label it is removed from the
 -- fixup list.
-local function goto_label_bind(self, label_name)
+local function goto_label_bind(self, label)
    local fixup_list = self.scope.goto_fixups
    local i = 1
    while fixup_list[i] do
       local fixup = fixup_list[i]
-      if fixup.name == label_name then
+      if fixup.name == label.name then
+         if fixup.scope == label.scope and label.basereg > fixup.basereg then
+            -- The label and goto are in the same scope but some locals were
+            -- declared between the goto and the label.
+            return fixup, fixup.basereg + 1
+         end
          local basereg, need_uclo = fixup.basereg, fixup.need_uclo
+         local found = goto_uclo_backward(self, fixup.scope, label.scope)
+         if not found then return fixup end
          self:fix_goto(fixup.pc, basereg, need_uclo, #self.code - fixup.pc)
          table.remove(fixup_list, i)
       else
          i = i + 1
       end
    end
+   return nil
 end
-function Proto.__index:goto_label(label_name)
+function Proto.__index:goto_label(label_name, source_line)
    if goto_label_resolve(self, label_name) then
       -- TODO: ensure the error message is the same of LuaJIT
       error("duplicate label name:", label_name)
    end
-   local label = goto_label_append(self, label_name)
-   goto_label_bind(self, label_name)
-   return label
+   local label = goto_label_append(self, label_name, source_line)
+   local fixup_error = goto_label_bind(self, label)
+   if fixup_error then
+      return false, fixup_error
+   else
+      return true, label
+   end
 end
 function Proto.__index:loop_register(exit, exit_reg)
    self.scope.loop_exit = exit
